@@ -2,49 +2,66 @@ import google.generativeai as genai
 import streamlit as st
 from streamlit_chat import message
 import streamlit.components.v1 as components
+from prometheus_client import Counter, Histogram, generate_latest, REGISTRY
+import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 
-genai.configure(api_key="AIzaSyArTog-quWD9Tqf-CkkFAq_-UOZfK1FTtA")  # Não se esqueça de substituir pela sua API Key
+genai.configure(api_key="AIzaSyArTog-quWD9Tqf-CkkFAq_-UOZfK1FTtA")
+
+# *** MOVA ESTA LINHA PARA CÁ: ***
+st.set_page_config(page_title="Seu Assistente de Compras Inteligente 🧠", page_icon="🧠")
 
 # --- Dados dos Produtos (Exemplo Hardcoded) ---
 produtos = {
     "camiseta_algodao": {
         "nome": "Camiseta de Algodão Premium",
         "descricao": "Feita com algodão orgânico super macio. Disponível em diversas cores e tamanhos.",
-        "preco": 29.99,
+        "preco": 5589.99,
         "disponibilidade": True,
         "variantes": {
             "cores": ["#1f77b4", "#2ca02c", "#7f7f7f", "#000000"],  # Cores em hexadecimal
             "tamanhos": ["P", "M", "G", "GG"]
         },
-        "envio": "R$5,00 para todo o Brasil. Entrega em 3-7 dias úteis.",
+        "envio": "2000,00 kz para toda Luanda. Entrega em 3-7 dias úteis.",
         "devolucao": "Aceitamos devoluções em até 30 dias."
     },
     "caneca_ceramica": {
         "nome": "Caneca de Cerâmica Personalizada",
         "descricao": "Caneca de cerâmica de alta qualidade, ideal para bebidas quentes ou frias. Pode ser personalizada com sua foto ou texto.",
-        "preco": 19.99,
+        "preco": 760.78,
         "disponibilidade": True,
-        "envio": "R$7,00 para todo o Brasil. Entrega em 5-10 dias úteis.",
+        "envio": "1000,00 kz para toda Luanda. Entrega em 5-10 dias úteis.",
         "devolucao": "Não aceitamos devoluções de produtos personalizados."
     }
     # Adicione mais produtos aqui
 }
 
+@st.cache_resource
+def initialize_metrics():
+    request_count = Counter('app_requests_total', 'Total number of requests to the app')
+    response_latency = Histogram('app_response_latency_seconds', 'Response latency in seconds')
+    agent_interaction_count = Counter('agent_interactions_total', 'Total number of interactions with the sales agent')
+    return request_count, response_latency, agent_interaction_count
+
+REQUEST_COUNT, RESPONSE_LATENCY, AGENT_INTERACTION_COUNT = initialize_metrics()
+
 def agente_de_vendas(pergunta_usuario, historico_conversa, produtos_conhecimento=produtos):
     """
     Agente para responder perguntas sobre produtos, lembrando do histórico da conversa.
     """
+    start_time = time.time()
     model_vendas = genai.GenerativeModel('gemini-2.0-flash-exp')
 
     prompt_vendas = f"""Você é um agente de vendas especializado nos seguintes produtos:\n\n"""
     for nome, detalhes in produtos_conhecimento.items():
-        prompt_vendas += f"- **{detalhes['nome']}**: {detalhes['descricao']} Preço: R${detalhes['preco']:.2f}. "
+        prompt_vendas += f"- **{detalhes['nome']}**: {detalhes['descricao']} Preço:{detalhes['preco']:.2f} kz. "
         if detalhes['disponibilidade']:
             prompt_vendas += "Disponível."
         else:
             prompt_vendas += "Indisponível."
         if "variantes" in detalhes:
-            prompt_vendas += f" Variantes: Cores: {', '.join([f'<span style="color:{cor}">●</span>' for cor in detalhes['variantes'].get('cores', [])])}, Tamanhos: {', '.join(detalhes['variantes'].get('tamanhos', []))}."
+            prompt_vendas += f" Variantes: Cores: {', '.join([f'<span style="color:{cor}">●</span>' for cor in detalhes['variantes'].get('cores', [])])}, Tamanhos: {', '.join(detalhes['variantes'].get('tamanhos', []) )}."
         prompt_vendas += "\n"
 
     # Adiciona o histórico da conversa ao prompt
@@ -55,10 +72,13 @@ def agente_de_vendas(pergunta_usuario, historico_conversa, produtos_conhecimento
     prompt_vendas += f"""\nCom base nas informações acima e no histórico da conversa, responda à seguinte pergunta do usuário da melhor forma possível para auxiliar na venda:\n\n"{pergunta_usuario}"\n\nSe o usuário perguntar sobre um produto específico, forneça detalhes relevantes como descrição, preço, disponibilidade e variantes. Se o usuário quiser comprar, informe os próximos passos. Tente lembrar de informações ditas anteriormente na conversa para fornecer respostas mais contextuais e personalizadas. Seja amigável e persuasivo."""
 
     response_vendas = model_vendas.generate_content(prompt_vendas)
+    latency = time.time() - start_time
+    RESPONSE_LATENCY.observe(latency)
+    AGENT_INTERACTION_COUNT.inc()
     return response_vendas.text
 
 # --- Interface Streamlit Aprimorada e Mais Atraente com Memória ---
-st.set_page_config(page_title="Assistente de Compras com Memória", page_icon="🧠")
+# st.set_page_config(page_title="Seu Assistente de Compras Inteligente 🧠", page_icon="🧠") # REMOVA DAQUI
 
 # Custom CSS para estilos (mantido)
 st.markdown(
@@ -128,6 +148,7 @@ for msg in st.session_state["messages"]:
 
 # Caixa de entrada para o usuário
 if prompt := st.chat_input("Digite sua pergunta aqui..."):
+    REQUEST_COUNT.inc()
     st.session_state["messages"].append({"content": prompt, "is_user": True})
     st.markdown(f'<div class="user-message"><i class="fa fa-user-circle"></i> {prompt}</div>', unsafe_allow_html=True)
 
@@ -141,7 +162,7 @@ with st.sidebar:
     st.header("Detalhes dos Produtos")
     for nome, detalhes in produtos.items():
         with st.expander(f"**{detalhes['nome']}**", expanded=False):
-            st.markdown(f"<p class='sidebar-item'>Preço: R${detalhes['preco']:.2f}</p>", unsafe_allow_html=True)
+            st.markdown(f"<p class='sidebar-item'>Preço: {detalhes['preco']:.2f} kz</p>", unsafe_allow_html=True)
             st.markdown(f"<p class='sidebar-item'>Disponibilidade: {'<span style=\"color:green\">✅ Disponível</span>' if detalhes['disponibilidade'] else '<span style=\"color:red\">❌ Indisponível</span>'}</p>", unsafe_allow_html=True)
             if "variantes" in detalhes:
                 if "cores" in detalhes['variantes']:
@@ -152,7 +173,7 @@ with st.sidebar:
             st.markdown(f"<p class='sidebar-item'>Envio: {detalhes['envio']}</p>", unsafe_allow_html=True)
             st.markdown(f"<p class='sidebar-item'>Devolução: {detalhes['devolucao']}</p>", unsafe_allow_html=True)
     st.markdown("---")
-    st.markdown("Feito com ❤️ e Gemini")
+    st.markdown("Sua Compra Inteligente❤️")
 
 # Adiciona a biblioteca Font Awesome para os ícones (mantido)
 components.html(
@@ -161,3 +182,25 @@ components.html(
     """,
     height=0,
 )
+
+# Exponha as métricas em uma rota HTTP
+class MetricsHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/metrics':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(generate_latest(REGISTRY))
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+def run_metrics_server(port=8000):
+    httpd = HTTPServer(('0.0.0.0', port), MetricsHandler)
+    httpd.serve_forever()
+
+if __name__ == '__main__':
+    metrics_thread = threading.Thread(target=run_metrics_server)
+    metrics_thread.daemon = True
+    metrics_thread.start()
+    # O loop principal do Streamlit continua rodando aqui
