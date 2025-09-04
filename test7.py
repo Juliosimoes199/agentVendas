@@ -6,13 +6,14 @@ from google.adk.sessions import InMemorySessionService # Para protótipo, usar p
 from google.adk.runners import Runner
 from google.adk.tools import google_search
 from google.genai import types
+import dotenv
 import os
 
 # --- Configurações Iniciais ---
+dotenv.load_dotenv()
+api_key = os.getenv("GOOGLE_API_KEY")
 
-#api_key = os.getenv("GOOGLE_API_KEY")
-
-genai.configure(api_key="AIzaSyBeFJUpFd7ntGWe2wXRCieBlNblWVYiO7A") # osapi vm
+genai.configure(api_key=api_key) # osapi vm
 
 
 
@@ -139,3 +140,4 @@ if user_message := st.chat_input("Olá! Como posso ajudar você a gerenciar suas
     except Exception as e:
         st.error(f"Erro ao processar a requisição: {e}")
         st.session_state.messages.append({"role": "assistant", "content": f"Desculpe, ocorreu um erro: {e}"})
+
