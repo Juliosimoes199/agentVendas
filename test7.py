@@ -10,8 +10,8 @@ import dotenv
 import os
 
 # --- Configurações Iniciais ---
-dotenv.load_dotenv()
-api_key = os.getenv("GOOGLE_API_KEY")
+
+api_key = st.secrets["GOOGLE_API_KEY"]
 
 genai.configure(api_key=api_key) # osapi vm
 
@@ -140,4 +140,5 @@ if user_message := st.chat_input("Olá! Como posso ajudar você a gerenciar suas
     except Exception as e:
         st.error(f"Erro ao processar a requisição: {e}")
         st.session_state.messages.append({"role": "assistant", "content": f"Desculpe, ocorreu um erro: {e}"})
+
 
